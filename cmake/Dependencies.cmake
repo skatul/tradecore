@@ -1,5 +1,20 @@
 include(FetchContent)
 
+# --- protobuf ---
+set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_PROTOBUF_BINARIES ON CACHE BOOL "" FORCE)
+set(protobuf_BUILD_PROTOC_BINARIES ON CACHE BOOL "" FORCE)
+set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
+set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    protobuf
+    GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
+    GIT_TAG        v29.3
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(protobuf)
+
 # --- libzmq ---
 FetchContent_Declare(
     libzmq
@@ -14,8 +29,6 @@ set(WITH_DOCS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(libzmq)
 
 # --- cppzmq (header-only) ---
-# Download header directly and create an interface target that links to libzmq-static.
-# This avoids cppzmq's find_package(ZeroMQ) which doesn't work with FetchContent.
 FetchContent_Declare(
     cppzmq
     GIT_REPOSITORY https://github.com/zeromq/cppzmq.git
@@ -30,19 +43,11 @@ endif()
 add_library(cppzmq INTERFACE)
 target_include_directories(cppzmq INTERFACE ${cppzmq_SOURCE_DIR})
 target_link_libraries(cppzmq INTERFACE libzmq-static)
-# cppzmq needs the libzmq include dir for zmq.h
 FetchContent_GetProperties(libzmq SOURCE_DIR libzmq_SOURCE_DIR)
 target_include_directories(cppzmq INTERFACE
     ${libzmq_SOURCE_DIR}/include
     ${libzmq_BINARY_DIR}
 )
-
-# --- nlohmann/json ---
-FetchContent_Declare(
-    nlohmann_json
-    URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
-)
-FetchContent_MakeAvailable(nlohmann_json)
 
 # --- GoogleTest (for tests only) ---
 FetchContent_Declare(

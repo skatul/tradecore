@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <fix_messages.pb.h>
 #include "booking/book_keeper.hpp"
 #include "matching/matching_engine.hpp"
 #include "messaging/protocol.hpp"
@@ -15,8 +16,8 @@ class OrderManager {
 public:
     OrderManager(matching::MatchingEngine& matcher, booking::BookKeeper& book_keeper);
 
-    /// Process an incoming new_order message. Returns response messages.
-    std::vector<messaging::Message> handle_new_order(const messaging::Message& msg);
+    /// Process an incoming NewOrderSingle. Returns response FixMessages.
+    std::vector<fix::FixMessage> handle_new_order(const fix::FixMessage& msg);
 
     /// Validate order fields. Returns empty string if valid, error otherwise.
     std::string validate(const Order& order) const;

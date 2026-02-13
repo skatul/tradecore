@@ -35,22 +35,21 @@ bool ZmqServer::poll_once(int timeout_ms) {
     zmq::message_t empty;
     (void)socket_.recv(empty, zmq::recv_flags::none);
 
-    // Receive data frame
+    // Receive protobuf data frame
     zmq::message_t data;
     (void)socket_.recv(data, zmq::recv_flags::none);
 
     try {
-        auto j = json::parse(std::string(static_cast<char*>(data.data()), data.size()));
-        auto msg = Message::from_json(j);
+        auto msg = deserialize(data.data(), data.size());
 
         if (handler_) {
             auto responses = handler_(client_id, msg);
             for (const auto& response : responses) {
-                std::string resp_str = response.to_json().dump();
+                std::string resp_bytes = serialize(response);
 
                 socket_.send(zmq::buffer(client_id), zmq::send_flags::sndmore);
                 socket_.send(zmq::message_t{}, zmq::send_flags::sndmore);
-                socket_.send(zmq::buffer(resp_str), zmq::send_flags::none);
+                socket_.send(zmq::buffer(resp_bytes), zmq::send_flags::none);
             }
         }
     } catch (const std::exception& e) {

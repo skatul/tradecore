@@ -9,17 +9,35 @@ OrderManager::OrderManager(matching::MatchingEngine& matcher,
                            booking::BookKeeper& book_keeper)
     : matcher_(matcher), book_keeper_(book_keeper) {}
 
-std::vector<messaging::Message> OrderManager::handle_new_order(
-    const messaging::Message& msg) {
-    std::vector<messaging::Message> responses;
+std::vector<fix::FixMessage> OrderManager::handle_new_order(
+    const fix::FixMessage& msg) {
+    std::vector<fix::FixMessage> responses;
 
-    // Deserialize order from payload
+    if (!msg.has_new_order_single()) {
+        responses.push_back(messaging::make_reject(msg, "Message has no NewOrderSingle body"));
+        return responses;
+    }
+
+    const auto& nos = msg.new_order_single();
+
+    // Convert FIX NewOrderSingle to internal Order
     Order order;
     try {
-        order = Order::from_json(msg.payload);
+        order.cl_ord_id = nos.cl_ord_id();
+        order.instrument = instrument::Instrument::from_proto(nos.instrument());
+        order.side = (nos.side() == fix::SIDE_BUY) ? Side::Buy : Side::Sell;
+        order.quantity = nos.order_qty();
+        order.order_type = (nos.ord_type() == fix::ORD_TYPE_LIMIT) ? OrderType::Limit : OrderType::Market;
+        order.limit_price = nos.price();
+        order.strategy_id = nos.text();
+
+        switch (nos.time_in_force()) {
+            case fix::TIF_GTC: order.time_in_force = TimeInForce::GTC; break;
+            case fix::TIF_IOC: order.time_in_force = TimeInForce::IOC; break;
+            default: order.time_in_force = TimeInForce::Day; break;
+        }
     } catch (const std::exception& e) {
-        responses.push_back(
-            messaging::make_reject(msg, "parse_error", e.what()));
+        responses.push_back(messaging::make_reject(msg, std::string("Parse error: ") + e.what()));
         return responses;
     }
 
@@ -29,7 +47,7 @@ std::vector<messaging::Message> OrderManager::handle_new_order(
     // Validate
     auto error = validate(order);
     if (!error.empty()) {
-        responses.push_back(messaging::make_reject(msg, "validation_error", error));
+        responses.push_back(messaging::make_reject(msg, error));
         return responses;
     }
 
@@ -72,13 +90,14 @@ std::vector<messaging::Message> OrderManager::handle_new_order(
                   << " " << match_result.fill_quantity
                   << " @ " << match_result.fill_price << std::endl;
 
-        responses.push_back(messaging::make_fill(
+        responses.push_back(messaging::make_execution_report_fill(
             msg, order.order_id, fill_id,
             match_result.fill_price, match_result.fill_quantity,
-            match_result.remaining_quantity, commission));
+            match_result.remaining_quantity, match_result.fill_quantity,
+            commission));
     } else {
         responses.push_back(messaging::make_reject(
-            msg, "no_match", "Could not match order — no market price available"));
+            msg, "Could not match order — no market price available"));
     }
 
     // Store order
@@ -88,11 +107,11 @@ std::vector<messaging::Message> OrderManager::handle_new_order(
 }
 
 std::string OrderManager::validate(const Order& order) const {
-    if (order.cl_ord_id.empty()) return "cl_ord_id is required";
-    if (order.instrument.symbol.empty()) return "instrument symbol is required";
-    if (order.quantity <= 0.0) return "quantity must be positive";
+    if (order.cl_ord_id.empty()) return "ClOrdID (tag 11) is required";
+    if (order.instrument.symbol.empty()) return "Symbol (tag 55) is required";
+    if (order.quantity <= 0.0) return "OrderQty (tag 38) must be positive";
     if (order.order_type == OrderType::Limit && order.limit_price <= 0.0) {
-        return "limit_price must be positive for limit orders";
+        return "Price (tag 44) must be positive for limit orders";
     }
     return "";
 }

@@ -14,6 +14,8 @@ void signal_handler(int) {
 }
 
 int main(int argc, char* argv[]) {
+    GOOGLE_PROTOBUF_VERIFY_VERSION;
+
     std::string bind_addr = "tcp://*:5555";
     if (argc > 1) bind_addr = argv[1];
 
@@ -26,60 +28,62 @@ int main(int argc, char* argv[]) {
 
     server.set_handler(
         [&](const std::string& client_id,
-            const tradecore::messaging::Message& msg)
-            -> std::vector<tradecore::messaging::Message> {
+            const fix::FixMessage& msg)
+            -> std::vector<fix::FixMessage> {
 
-        std::cout << "[RECV] msg_type=" << msg.msg_type
-                  << " from=" << client_id << std::endl;
+        if (msg.has_new_order_single()) {
+            const auto& nos = msg.new_order_single();
+            std::cout << "[RECV] NewOrderSingle from=" << client_id
+                      << " cl_ord_id=" << nos.cl_ord_id()
+                      << " symbol=" << nos.instrument().symbol() << std::endl;
 
-        if (msg.msg_type == "new_order") {
-            // If the order payload contains a market_price hint, use it
-            if (msg.payload.contains("instrument")) {
-                auto symbol = msg.payload["instrument"].value("symbol", "");
-                // Use limit_price as market price hint for market orders
-                if (msg.payload.value("order_type", "") == "market" &&
-                    msg.payload.contains("limit_price") &&
-                    !msg.payload["limit_price"].is_null()) {
-                    matcher.update_market_price(symbol,
-                        msg.payload["limit_price"].get<double>());
-                }
+            // Extract market price hint
+            if (nos.market_price() > 0.0) {
+                matcher.update_market_price(
+                    nos.instrument().symbol(), nos.market_price());
             }
+
             return order_mgr.handle_new_order(msg);
         }
 
-        if (msg.msg_type == "heartbeat") {
-            return {tradecore::messaging::Message::make_response(
-                msg, "heartbeat", {})};
+        if (msg.has_heartbeat()) {
+            std::cout << "[RECV] Heartbeat from=" << client_id << std::endl;
+            return {tradecore::messaging::make_heartbeat_response(msg)};
         }
 
-        if (msg.msg_type == "position_query") {
-            auto positions = book_keeper.get_all_positions();
-            nlohmann::json pos_array = nlohmann::json::array();
-            for (const auto& pos : positions) {
-                nlohmann::json p;
-                p["symbol"] = pos.symbol;
-                p["quantity"] = pos.quantity;
-                p["avg_price"] = pos.avg_price;
-                p["realized_pnl"] = pos.realized_pnl;
-                pos_array.push_back(p);
+        if (msg.has_position_request()) {
+            std::cout << "[RECV] PositionRequest from=" << client_id << std::endl;
+            auto response = tradecore::messaging::make_position_report(
+                msg, tradecore::messaging::generate_uuid());
+
+            auto* pr = response.mutable_position_report();
+            for (const auto& pos : book_keeper.get_all_positions()) {
+                auto* entry = pr->add_positions();
+                entry->mutable_instrument()->set_symbol(pos.symbol);
+                entry->mutable_instrument()->set_security_type(fix::SECURITY_TYPE_COMMON_STOCK);
+                if (pos.quantity >= 0) {
+                    entry->set_long_qty(pos.quantity);
+                } else {
+                    entry->set_short_qty(-pos.quantity);
+                }
+                entry->set_avg_price(pos.avg_price);
+                entry->set_realized_pnl(pos.realized_pnl);
             }
-            nlohmann::json payload;
-            payload["positions"] = pos_array;
-            return {tradecore::messaging::Message::make_response(
-                msg, "position_report", payload)};
+
+            return {response};
         }
 
-        return {tradecore::messaging::make_reject(
-            msg, "unknown_msg_type",
-            "Unrecognized message type: " + msg.msg_type)};
+        std::cout << "[RECV] Unknown message from=" << client_id << std::endl;
+        return {tradecore::messaging::make_reject(msg, "Unknown message type")};
     });
 
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    std::cout << "tradecore listening on " << bind_addr << std::endl;
+    std::cout << "tradecore listening on " << bind_addr << " (FIX/protobuf)" << std::endl;
     server.run();
 
     std::cout << "\nShutdown. Trades booked: " << book_keeper.trade_count() << std::endl;
+    google::protobuf::ShutdownProtobufLibrary();
     return 0;
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <nlohmann/json.hpp>
+#include <fix_messages.pb.h>
 #include <optional>
 #include <string>
 
@@ -8,12 +8,23 @@ namespace tradecore::instrument {
 
 enum class AssetClass { Equity, Future, Option, FX };
 
-inline AssetClass asset_class_from_string(const std::string& s) {
-    if (s == "equity") return AssetClass::Equity;
-    if (s == "future") return AssetClass::Future;
-    if (s == "option") return AssetClass::Option;
-    if (s == "fx") return AssetClass::FX;
-    throw std::invalid_argument("Unknown asset class: " + s);
+inline AssetClass asset_class_from_security_type(fix::SecurityType st) {
+    switch (st) {
+        case fix::SECURITY_TYPE_FUTURE: return AssetClass::Future;
+        case fix::SECURITY_TYPE_OPTION: return AssetClass::Option;
+        case fix::SECURITY_TYPE_FX_SPOT: return AssetClass::FX;
+        default: return AssetClass::Equity;
+    }
+}
+
+inline fix::SecurityType asset_class_to_security_type(AssetClass ac) {
+    switch (ac) {
+        case AssetClass::Equity: return fix::SECURITY_TYPE_COMMON_STOCK;
+        case AssetClass::Future: return fix::SECURITY_TYPE_FUTURE;
+        case AssetClass::Option: return fix::SECURITY_TYPE_OPTION;
+        case AssetClass::FX:     return fix::SECURITY_TYPE_FX_SPOT;
+    }
+    return fix::SECURITY_TYPE_UNSPECIFIED;
 }
 
 inline std::string asset_class_to_string(AssetClass ac) {
@@ -48,46 +59,38 @@ struct Instrument {
     std::optional<std::string> quote_currency;
     std::optional<double> pip_size;
 
-    static Instrument from_json(const nlohmann::json& j) {
+    static Instrument from_proto(const fix::Instrument& proto) {
         Instrument inst;
-        inst.symbol = j.at("symbol").get<std::string>();
-        inst.asset_class = asset_class_from_string(j.at("asset_class").get<std::string>());
+        inst.symbol = proto.symbol();
+        inst.asset_class = asset_class_from_security_type(proto.security_type());
+        inst.exchange = proto.exchange();
+        if (!proto.currency().empty()) inst.currency = proto.currency();
 
-        if (j.contains("exchange")) inst.exchange = j["exchange"].get<std::string>();
-        if (j.contains("currency")) inst.currency = j["currency"].get<std::string>();
-        if (j.contains("expiry")) inst.expiry = j["expiry"].get<std::string>();
-        if (j.contains("contract_size")) inst.contract_size = j["contract_size"].get<double>();
-        if (j.contains("tick_size")) inst.tick_size = j["tick_size"].get<double>();
-        if (j.contains("underlying")) inst.underlying = j["underlying"].get<std::string>();
-        if (j.contains("strike")) inst.strike = j["strike"].get<double>();
-        if (j.contains("option_type")) inst.option_type = j["option_type"].get<std::string>();
-        if (j.contains("expiration")) inst.expiration = j["expiration"].get<std::string>();
-        if (j.contains("base_currency")) inst.base_currency = j["base_currency"].get<std::string>();
-        if (j.contains("quote_currency")) inst.quote_currency = j["quote_currency"].get<std::string>();
-        if (j.contains("pip_size")) inst.pip_size = j["pip_size"].get<double>();
+        if (!proto.maturity_date().empty()) inst.expiry = proto.maturity_date();
+        if (proto.contract_multiplier() > 0) inst.contract_size = proto.contract_multiplier();
+        if (!proto.underlying_symbol().empty()) inst.underlying = proto.underlying_symbol();
+        if (proto.strike_price() > 0) inst.strike = proto.strike_price();
+        if (!proto.put_or_call().empty()) inst.option_type = proto.put_or_call();
+        if (proto.min_price_increment() > 0) inst.pip_size = proto.min_price_increment();
 
         return inst;
     }
 
-    nlohmann::json to_json() const {
-        nlohmann::json j;
-        j["symbol"] = symbol;
-        j["asset_class"] = asset_class_to_string(asset_class);
-        if (!exchange.empty()) j["exchange"] = exchange;
-        j["currency"] = currency;
+    fix::Instrument to_proto() const {
+        fix::Instrument proto;
+        proto.set_symbol(symbol);
+        proto.set_security_type(asset_class_to_security_type(asset_class));
+        if (!exchange.empty()) proto.set_exchange(exchange);
+        proto.set_currency(currency);
 
-        if (expiry) j["expiry"] = *expiry;
-        if (contract_size != 1.0) j["contract_size"] = contract_size;
-        if (tick_size != 0.01) j["tick_size"] = tick_size;
-        if (underlying) j["underlying"] = *underlying;
-        if (strike) j["strike"] = *strike;
-        if (option_type) j["option_type"] = *option_type;
-        if (expiration) j["expiration"] = *expiration;
-        if (base_currency) j["base_currency"] = *base_currency;
-        if (quote_currency) j["quote_currency"] = *quote_currency;
-        if (pip_size) j["pip_size"] = *pip_size;
+        if (expiry) proto.set_maturity_date(*expiry);
+        if (contract_size != 1.0) proto.set_contract_multiplier(contract_size);
+        if (underlying) proto.set_underlying_symbol(*underlying);
+        if (strike) proto.set_strike_price(*strike);
+        if (option_type) proto.set_put_or_call(*option_type);
+        if (pip_size) proto.set_min_price_increment(*pip_size);
 
-        return j;
+        return proto;
     }
 };
 

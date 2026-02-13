@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include <fix_messages.pb.h>
 #include "messaging/protocol.hpp"
 
 namespace tradecore::messaging {
@@ -17,16 +18,13 @@ public:
     ZmqServer(const ZmqServer&) = delete;
     ZmqServer& operator=(const ZmqServer&) = delete;
 
-    using MessageHandler = std::function<std::vector<Message>(
-        const std::string& client_id, const Message& msg)>;
+    using MessageHandler = std::function<std::vector<fix::FixMessage>(
+        const std::string& client_id, const fix::FixMessage& msg)>;
 
     void set_handler(MessageHandler handler);
 
-    /// Poll for one message, dispatch to handler, send responses.
-    /// Returns true if a message was processed.
     bool poll_once(int timeout_ms = 100);
 
-    /// Run the event loop (blocking).
     void run();
     void stop();
 

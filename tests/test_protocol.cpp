@@ -3,90 +3,140 @@
 
 using namespace tradecore::messaging;
 
-TEST(Protocol, MessageRoundtrip) {
-    Message msg;
-    msg.msg_type = "new_order";
-    msg.msg_id = "test-123";
-    msg.timestamp = "2024-01-01T00:00:00.000Z";
-    msg.payload = {{"cl_ord_id", "ord-001"}, {"side", "buy"}};
+TEST(Protocol, SerializeDeserializeRoundtrip) {
+    fix::FixMessage msg;
+    msg.set_sender_comp_id("CLIENT");
+    msg.set_target_comp_id("TRADECORE");
+    msg.set_msg_seq_num("seq-001");
+    msg.set_sending_time(current_timestamp());
 
-    auto j = msg.to_json();
-    auto restored = Message::from_json(j);
+    auto* nos = msg.mutable_new_order_single();
+    nos->set_cl_ord_id("ord-001");
+    nos->mutable_instrument()->set_symbol("AAPL");
+    nos->set_side(fix::SIDE_BUY);
+    nos->set_order_qty(100.0);
+    nos->set_ord_type(fix::ORD_TYPE_MARKET);
 
-    EXPECT_EQ(restored.msg_type, "new_order");
-    EXPECT_EQ(restored.msg_id, "test-123");
-    EXPECT_EQ(restored.payload["cl_ord_id"], "ord-001");
-    EXPECT_TRUE(restored.ref_msg_id.empty());
+    std::string bytes = serialize(msg);
+    auto restored = deserialize(bytes);
+
+    EXPECT_EQ(restored.sender_comp_id(), "CLIENT");
+    EXPECT_EQ(restored.target_comp_id(), "TRADECORE");
+    EXPECT_TRUE(restored.has_new_order_single());
+    EXPECT_EQ(restored.new_order_single().cl_ord_id(), "ord-001");
+    EXPECT_EQ(restored.new_order_single().instrument().symbol(), "AAPL");
+    EXPECT_EQ(restored.new_order_single().side(), fix::SIDE_BUY);
+    EXPECT_EQ(restored.new_order_single().order_qty(), 100.0);
 }
 
-TEST(Protocol, MakeResponse) {
-    Message request;
-    request.msg_type = "new_order";
-    request.msg_id = "req-001";
-    request.timestamp = current_timestamp();
-    request.payload = {{"cl_ord_id", "ord-001"}};
+TEST(Protocol, MakeExecutionReportNew) {
+    fix::FixMessage request;
+    request.set_sender_comp_id("CLIENT");
+    request.set_msg_seq_num("seq-001");
+    auto* nos = request.mutable_new_order_single();
+    nos->set_cl_ord_id("ord-001");
+    nos->mutable_instrument()->set_symbol("AAPL");
+    nos->set_side(fix::SIDE_BUY);
+    nos->set_order_qty(100.0);
 
-    auto response = Message::make_response(request, "order_ack", {{"status", "accepted"}});
+    auto response = make_execution_report_new(request, "TC-00001");
 
-    EXPECT_EQ(response.msg_type, "order_ack");
-    EXPECT_EQ(response.ref_msg_id, "req-001");
-    EXPECT_EQ(response.payload["status"], "accepted");
-    EXPECT_FALSE(response.msg_id.empty());
+    EXPECT_EQ(response.sender_comp_id(), "TRADECORE");
+    EXPECT_EQ(response.target_comp_id(), "CLIENT");
+    EXPECT_TRUE(response.has_execution_report());
+
+    const auto& er = response.execution_report();
+    EXPECT_EQ(er.order_id(), "TC-00001");
+    EXPECT_EQ(er.cl_ord_id(), "ord-001");
+    EXPECT_EQ(er.exec_type(), fix::EXEC_TYPE_NEW);
+    EXPECT_EQ(er.ord_status(), fix::ORD_STATUS_NEW);
+    EXPECT_EQ(er.instrument().symbol(), "AAPL");
+    EXPECT_EQ(er.side(), fix::SIDE_BUY);
+    EXPECT_EQ(er.order_qty(), 100.0);
+    EXPECT_EQ(er.leaves_qty(), 100.0);
+    EXPECT_EQ(er.cum_qty(), 0.0);
 }
 
-TEST(Protocol, MakeOrderAck) {
-    Message request;
-    request.msg_type = "new_order";
-    request.msg_id = "req-001";
-    request.timestamp = current_timestamp();
-    request.payload = {{"cl_ord_id", "ord-001"}};
+TEST(Protocol, MakeExecutionReportFill) {
+    fix::FixMessage request;
+    request.set_sender_comp_id("CLIENT");
+    auto* nos = request.mutable_new_order_single();
+    nos->set_cl_ord_id("ord-001");
+    nos->mutable_instrument()->set_symbol("AAPL");
+    nos->set_side(fix::SIDE_BUY);
+    nos->set_order_qty(100.0);
 
-    auto ack = make_order_ack(request, "TC-00001");
+    auto response = make_execution_report_fill(
+        request, "TC-00001", "F-00001", 150.0, 100.0, 0.0, 100.0, 1.5);
 
-    EXPECT_EQ(ack.msg_type, "order_ack");
-    EXPECT_EQ(ack.payload["order_id"], "TC-00001");
-    EXPECT_EQ(ack.payload["cl_ord_id"], "ord-001");
-    EXPECT_EQ(ack.payload["status"], "accepted");
+    EXPECT_TRUE(response.has_execution_report());
+    const auto& er = response.execution_report();
+    EXPECT_EQ(er.order_id(), "TC-00001");
+    EXPECT_EQ(er.exec_id(), "F-00001");
+    EXPECT_EQ(er.exec_type(), fix::EXEC_TYPE_FILL);
+    EXPECT_EQ(er.ord_status(), fix::ORD_STATUS_FILLED);
+    EXPECT_EQ(er.last_px(), 150.0);
+    EXPECT_EQ(er.last_qty(), 100.0);
+    EXPECT_EQ(er.leaves_qty(), 0.0);
+    EXPECT_EQ(er.cum_qty(), 100.0);
+    EXPECT_EQ(er.commission(), 1.5);
 }
 
-TEST(Protocol, MakeFill) {
-    Message request;
-    request.msg_type = "new_order";
-    request.msg_id = "req-001";
-    request.timestamp = current_timestamp();
-    request.payload = {{"cl_ord_id", "ord-001"}};
+TEST(Protocol, MakeExecutionReportPartialFill) {
+    fix::FixMessage request;
+    auto* nos = request.mutable_new_order_single();
+    nos->set_cl_ord_id("ord-001");
+    nos->mutable_instrument()->set_symbol("AAPL");
+    nos->set_side(fix::SIDE_BUY);
+    nos->set_order_qty(100.0);
 
-    auto fill = make_fill(request, "TC-00001", "F-00001", 150.0, 100.0, 0.0, 1.5);
+    auto response = make_execution_report_fill(
+        request, "TC-00001", "F-00001", 150.0, 60.0, 40.0, 60.0, 0.9);
 
-    EXPECT_EQ(fill.msg_type, "fill");
-    EXPECT_EQ(fill.payload["order_id"], "TC-00001");
-    EXPECT_EQ(fill.payload["fill_price"], 150.0);
-    EXPECT_EQ(fill.payload["fill_quantity"], 100.0);
-    EXPECT_EQ(fill.payload["status"], "filled");
-    EXPECT_EQ(fill.payload["commission"], 1.5);
+    const auto& er = response.execution_report();
+    EXPECT_EQ(er.exec_type(), fix::EXEC_TYPE_PARTIAL_FILL);
+    EXPECT_EQ(er.ord_status(), fix::ORD_STATUS_PARTIALLY_FILLED);
+    EXPECT_EQ(er.leaves_qty(), 40.0);
+    EXPECT_EQ(er.cum_qty(), 60.0);
 }
 
 TEST(Protocol, MakeReject) {
-    Message request;
-    request.msg_type = "new_order";
-    request.msg_id = "req-001";
-    request.timestamp = current_timestamp();
-    request.payload = {{"cl_ord_id", "ord-001"}};
+    fix::FixMessage request;
+    request.set_msg_seq_num("seq-001");
+    request.set_sender_comp_id("CLIENT");
+    request.mutable_new_order_single()->set_cl_ord_id("ord-001");
 
-    auto reject = make_reject(request, "no_match", "No price available");
+    auto response = make_reject(request, "Invalid order quantity");
 
-    EXPECT_EQ(reject.msg_type, "reject");
-    EXPECT_EQ(reject.payload["reason"], "no_match");
-    EXPECT_EQ(reject.payload["detail"], "No price available");
+    EXPECT_TRUE(response.has_reject());
+    EXPECT_EQ(response.reject().ref_msg_seq_num(), "seq-001");
+    EXPECT_EQ(response.reject().text(), "Invalid order quantity");
+    EXPECT_EQ(response.sender_comp_id(), "TRADECORE");
+    EXPECT_EQ(response.target_comp_id(), "CLIENT");
 }
 
-TEST(Protocol, NullRefMsgId) {
-    Message msg;
-    msg.msg_type = "heartbeat";
-    msg.msg_id = "hb-001";
-    msg.timestamp = current_timestamp();
-    msg.payload = {};
+TEST(Protocol, MakeHeartbeatResponse) {
+    fix::FixMessage request;
+    request.set_sender_comp_id("CLIENT");
+    auto* hb = request.mutable_heartbeat();
+    hb->set_test_req_id("test-req-001");
 
-    auto j = msg.to_json();
-    EXPECT_TRUE(j["ref_msg_id"].is_null());
+    auto response = make_heartbeat_response(request);
+
+    EXPECT_TRUE(response.has_heartbeat());
+    EXPECT_EQ(response.heartbeat().test_req_id(), "test-req-001");
+    EXPECT_EQ(response.sender_comp_id(), "TRADECORE");
+}
+
+TEST(Protocol, MakePositionReport) {
+    fix::FixMessage request;
+    request.set_sender_comp_id("CLIENT");
+    auto* pr = request.mutable_position_request();
+    pr->set_pos_req_id("pos-req-001");
+
+    auto response = make_position_report(request, "rpt-001");
+
+    EXPECT_TRUE(response.has_position_report());
+    EXPECT_EQ(response.position_report().pos_req_id(), "pos-req-001");
+    EXPECT_EQ(response.position_report().pos_rpt_id(), "rpt-001");
 }
