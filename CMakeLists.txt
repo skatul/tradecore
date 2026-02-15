@@ -32,11 +32,13 @@ add_executable(tradecore
     src/messaging/protocol.cpp
     src/orders/order_manager.cpp
     src/matching/matching_engine.cpp
+    src/matching/order_book.cpp
     src/booking/book_keeper.cpp
+    src/core/config.cpp
 )
 
 target_include_directories(tradecore PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(tradecore PRIVATE cppzmq fix_proto)
+target_link_libraries(tradecore PRIVATE cppzmq fix_proto spdlog::spdlog tomlplusplus::tomlplusplus)
 
 # Tests
 option(TRADECORE_BUILD_TESTS "Build tests" ON)

@@ -49,6 +49,11 @@ fix::FixMessage make_execution_report_fill(
     double cum_qty,
     double commission);
 
+fix::FixMessage make_execution_report_cancelled(
+    const fix::FixMessage& request,
+    const std::string& order_id,
+    const std::string& orig_cl_ord_id);
+
 fix::FixMessage make_reject(
     const fix::FixMessage& request,
     const std::string& reason);

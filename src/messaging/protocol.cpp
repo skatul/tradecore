@@ -85,6 +85,35 @@ fix::FixMessage make_execution_report_fill(
     return msg;
 }
 
+fix::FixMessage make_execution_report_cancelled(
+    const fix::FixMessage& request,
+    const std::string& order_id,
+    const std::string& orig_cl_ord_id) {
+
+    fix::FixMessage msg;
+    msg.set_sender_comp_id("TRADECORE");
+    msg.set_target_comp_id(request.sender_comp_id());
+    msg.set_msg_seq_num(generate_uuid());
+    msg.set_sending_time(current_timestamp());
+
+    auto* er = msg.mutable_execution_report();
+    er->set_order_id(order_id);
+    er->set_cl_ord_id(orig_cl_ord_id);
+    er->set_exec_id(generate_uuid());
+    er->set_exec_type(fix::EXEC_TYPE_CANCELLED);
+    er->set_ord_status(fix::ORD_STATUS_CANCELLED);
+    er->set_transact_time(current_timestamp());
+
+    // Copy instrument from the cancel request if available
+    if (request.has_order_cancel_request()) {
+        *er->mutable_instrument() = request.order_cancel_request().instrument();
+        er->set_side(request.order_cancel_request().side());
+        er->set_order_qty(request.order_cancel_request().order_qty());
+    }
+
+    return msg;
+}
+
 fix::FixMessage make_reject(
     const fix::FixMessage& request,
     const std::string& reason) {

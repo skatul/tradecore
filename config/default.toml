@@ -1,0 +1,33 @@
+# tradecore configuration
+
+[server]
+bind_address = "tcp://*:5555"
+poll_timeout_ms = 100
+
+[matching]
+# Spread in basis points for synthetic order book seeding
+spread_bps = 10.0
+# Number of price levels on each side
+depth_levels = 5
+# Quantity at each price level
+qty_per_level = 1000.0
+# Automatically seed the book when a market price is available
+auto_seed_book = true
+
+[commission]
+# Commission rate as a fraction (0.001 = 0.1%)
+rate = 0.001
+# Minimum commission per trade
+min = 0.0
+
+[logging]
+# Log level: trace, debug, info, warn, error, critical
+level = "info"
+# Log file path (rotating, 10MB, 3 rotations)
+file = "logs/tradecore.log"
+
+[metrics]
+# Interval in seconds for periodic metrics logging
+report_interval_s = 60
+# Enable/disable metrics collection
+enabled = true

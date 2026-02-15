@@ -1,6 +1,6 @@
 #include "messaging/zmq_server.hpp"
 
-#include <iostream>
+#include <spdlog/spdlog.h>
 
 namespace tradecore::messaging {
 
@@ -53,7 +53,7 @@ bool ZmqServer::poll_once(int timeout_ms) {
             }
         }
     } catch (const std::exception& e) {
-        std::cerr << "Error processing message: " << e.what() << std::endl;
+        spdlog::error("Error processing message: {}", e.what());
     }
 
     return true;
@@ -61,7 +61,7 @@ bool ZmqServer::poll_once(int timeout_ms) {
 
 void ZmqServer::run() {
     running_ = true;
-    std::cout << "tradecore server running..." << std::endl;
+    spdlog::info("tradecore server running...");
     while (running_) {
         poll_once(100);
     }
