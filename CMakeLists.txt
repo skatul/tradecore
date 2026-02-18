@@ -26,6 +26,13 @@ add_library(fix_proto STATIC ${PROTO_GEN_DIR}/fix_messages.pb.cc)
 target_include_directories(fix_proto PUBLIC ${PROTO_GEN_DIR})
 target_link_libraries(fix_proto PUBLIC protobuf::libprotobuf)
 
+add_library(tradecore_strategy STATIC
+    src/strategy/engine.cpp
+    src/optimization/optimizer.cpp
+    src/optimization/walk_forward.cpp
+)
+target_include_directories(tradecore_strategy PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 add_executable(tradecore
     src/main.cpp
     src/messaging/zmq_server.cpp

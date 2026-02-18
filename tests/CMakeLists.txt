@@ -6,12 +6,19 @@ add_executable(tradecore_tests
     test_order_manager.cpp
     test_metrics.cpp
     test_config.cpp
+    test_indicators.cpp
+    test_instrument_extended.cpp
+    test_strategy.cpp
+    test_optimization.cpp
     ../src/messaging/protocol.cpp
     ../src/matching/matching_engine.cpp
     ../src/matching/order_book.cpp
     ../src/booking/book_keeper.cpp
     ../src/orders/order_manager.cpp
     ../src/core/config.cpp
+    ../src/strategy/engine.cpp
+    ../src/optimization/optimizer.cpp
+    ../src/optimization/walk_forward.cpp
 )
 
 target_include_directories(tradecore_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)

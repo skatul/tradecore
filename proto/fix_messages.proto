@@ -60,6 +60,8 @@ enum SecurityType {
     SECURITY_TYPE_FUTURE = 2;        // FIX: FUT
     SECURITY_TYPE_OPTION = 3;        // FIX: OPT
     SECURITY_TYPE_FX_SPOT = 4;       // FIX: FXSPOT
+    SECURITY_TYPE_CRYPTO = 5;        // Digital asset
+    SECURITY_TYPE_ETF = 6;           // FIX: ETF
 }
 
 // ============================================================================
@@ -85,6 +87,9 @@ message Instrument {
 
     // FX
     double min_price_increment = 11;  // Tag 969 (pip size)
+
+    // Trading schedule
+    string trading_hours = 12;        // e.g. "24/7", "regular"
 }
 
 // ============================================================================

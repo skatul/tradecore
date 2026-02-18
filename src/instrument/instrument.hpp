@@ -6,13 +6,15 @@
 
 namespace tradecore::instrument {
 
-enum class AssetClass { Equity, Future, Option, FX };
+enum class AssetClass { Equity, Future, Option, FX, Crypto, ETF };
 
 inline AssetClass asset_class_from_security_type(fix::SecurityType st) {
     switch (st) {
         case fix::SECURITY_TYPE_FUTURE: return AssetClass::Future;
         case fix::SECURITY_TYPE_OPTION: return AssetClass::Option;
         case fix::SECURITY_TYPE_FX_SPOT: return AssetClass::FX;
+        case fix::SECURITY_TYPE_CRYPTO: return AssetClass::Crypto;
+        case fix::SECURITY_TYPE_ETF: return AssetClass::ETF;
         default: return AssetClass::Equity;
     }
 }
@@ -23,6 +25,8 @@ inline fix::SecurityType asset_class_to_security_type(AssetClass ac) {
         case AssetClass::Future: return fix::SECURITY_TYPE_FUTURE;
         case AssetClass::Option: return fix::SECURITY_TYPE_OPTION;
         case AssetClass::FX:     return fix::SECURITY_TYPE_FX_SPOT;
+        case AssetClass::Crypto: return fix::SECURITY_TYPE_CRYPTO;
+        case AssetClass::ETF:    return fix::SECURITY_TYPE_ETF;
     }
     return fix::SECURITY_TYPE_UNSPECIFIED;
 }
@@ -33,6 +37,8 @@ inline std::string asset_class_to_string(AssetClass ac) {
         case AssetClass::Future: return "future";
         case AssetClass::Option: return "option";
         case AssetClass::FX:     return "fx";
+        case AssetClass::Crypto: return "crypto";
+        case AssetClass::ETF:    return "etf";
     }
     return "unknown";
 }
@@ -59,6 +65,9 @@ struct Instrument {
     std::optional<std::string> quote_currency;
     std::optional<double> pip_size;
 
+    // Trading schedule
+    std::string trading_hours = "regular";
+
     static Instrument from_proto(const fix::Instrument& proto) {
         Instrument inst;
         inst.symbol = proto.symbol();
@@ -72,6 +81,7 @@ struct Instrument {
         if (proto.strike_price() > 0) inst.strike = proto.strike_price();
         if (!proto.put_or_call().empty()) inst.option_type = proto.put_or_call();
         if (proto.min_price_increment() > 0) inst.pip_size = proto.min_price_increment();
+        if (!proto.trading_hours().empty()) inst.trading_hours = proto.trading_hours();
 
         return inst;
     }
@@ -89,9 +99,40 @@ struct Instrument {
         if (strike) proto.set_strike_price(*strike);
         if (option_type) proto.set_put_or_call(*option_type);
         if (pip_size) proto.set_min_price_increment(*pip_size);
+        if (trading_hours != "regular") proto.set_trading_hours(trading_hours);
 
         return proto;
     }
 };
+
+// Factory: create a crypto instrument
+inline Instrument make_crypto(const std::string& symbol,
+                              const std::string& exchange = "",
+                              const std::string& currency = "USD",
+                              double tick_size = 0.01) {
+    Instrument inst;
+    inst.symbol = symbol;
+    inst.asset_class = AssetClass::Crypto;
+    inst.exchange = exchange;
+    inst.currency = currency;
+    inst.tick_size = tick_size;
+    inst.trading_hours = "24/7";
+    return inst;
+}
+
+// Factory: create an ETF instrument
+inline Instrument make_etf(const std::string& symbol,
+                           const std::string& exchange = "",
+                           const std::string& currency = "USD",
+                           double tick_size = 0.01) {
+    Instrument inst;
+    inst.symbol = symbol;
+    inst.asset_class = AssetClass::ETF;
+    inst.exchange = exchange;
+    inst.currency = currency;
+    inst.tick_size = tick_size;
+    inst.trading_hours = "regular";
+    return inst;
+}
 
 }  // namespace tradecore::instrument
